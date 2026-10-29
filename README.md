@@ -1,3 +1,14 @@
+# Procedural 3D city — Rust / Bevy
+
+> **English summary.** A procedural city generator written in Rust with the Bevy engine: streets, parks and buildings laid out from Perlin noise, generated and unloaded by chunks around the camera, with an egui panel to change the "chaos" level and the render scale in real time. Built in spring 2025 as a Rust course project (ESIEE Paris) with Alexandre Grosdidier and Théo Lyonnet. The full write-up below is in French.
+>
+> ```bash
+> git clone https://github.com/avidelaine/Ville3dProcedurale && cd Ville3dProcedurale
+> cargo run --release
+> ```
+
+---
+
 # 🏙️ Projet Rust – Ville 3D Procédurale avec Bevy
 
 **Groupe :** Alexandre VIDELAINE / Alexandre GROSDIDIER / Théo LYONNET  
@@ -169,8 +180,8 @@ Avant de commencer, assurez-vous d'avoir les éléments suivants installés sur 
 
 2. **Cloner ce dépôt** :
    ```bash
-   git clone https://github.com/Alexadnre/Projet_Rust
-   cd Projet_Rust
+   git clone https://github.com/avidelaine/Ville3dProcedurale
+   cd Ville3dProcedurale
    ```
 
 3. **Lancer le projet** :
