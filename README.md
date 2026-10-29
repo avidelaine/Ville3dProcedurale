@@ -1,208 +1,54 @@
 # Procedural 3D city — Rust / Bevy
 
-> **English summary.** A procedural city generator written in Rust with the Bevy engine: streets, parks and buildings laid out from Perlin noise, generated and unloaded by chunks around the camera, with an egui panel to change the "chaos" level and the render scale in real time. Built in spring 2025 as a Rust course project (ESIEE Paris) with Alexandre Grosdidier and Théo Lyonnet. The full write-up below is in French.
->
-> ```bash
-> git clone https://github.com/avidelaine/Ville3dProcedurale && cd Ville3dProcedurale
-> cargo run --release
-> ```
+A procedural city generator written in Rust with the [Bevy](https://bevyengine.org/) engine. Streets, parks and buildings are laid out from Perlin noise, generated and unloaded by chunks around the camera, and driven in real time by an egui panel: a *chaos* slider reshapes the city, a *resolution* slider trades render quality for frame rate.
 
----
+Built in spring 2025 as a Rust course project at ESIEE Paris, with Alexandre Grosdidier and Théo Lyonnet.
 
-# 🏙️ Projet Rust – Ville 3D Procédurale avec Bevy
+![Overview](./screenshots/vue_generale.png)
 
-**Groupe :** Alexandre VIDELAINE / Alexandre GROSDIDIER / Théo LYONNET  
-**Sujet :** Génération procédurale de ville interactive en 3D  
-**Moteur :** [Bevy Engine](https://bevyengine.org/)  
-**Langage :** Rust  
+## Run it
 
----
+```bash
+rustup install stable
+git clone https://github.com/avidelaine/Ville3dProcedurale && cd Ville3dProcedurale
+cargo run --release
+```
 
-## 📚 Sommaire
+Arrow keys pan the camera; the egui panel exposes chaos, zoom, resolution and a *regenerate* button.
 
-1. [🎯 Objectif du projet](#-objectif-du-projet)  
-2. [🧩 Fonctionnalités principales](#-fonctionnalités-principales)  
-3. [🧠 Organisation du travail](#-organisation-du-travail)  
-4. [🌆 Étapes de construction du projet](#-étapes-de-construction-du-projet)  
-   - [4.1 Génération simple (taille fixe)](#41-génération-simple-taille-fixe)  
-   - [4.2 Génération procédurale avec bruit](#42-génération-procédurale-avec-bruit)  
-   - [4.3 Génération par chunks](#43-génération-par-chunks)  
-5. [👤 Interactions utilisateur](#👤-interactions-utilisateur)  
-   - [5.1 Caméra](#51-caméra)  
-   - [5.2 Interface graphique](#52-interface-graphique)  
-6. [🧠 Problèmes rencontrés et solutions](#-problèmes-rencontrés-et-solutions)  
-   - [6.1 Gestion de la caméra](#61-gestion-de-la-caméra)  
-   - [6.2 Chunking et performance](#62-chunking-et-performance)  
-   - [6.3 Interface utilisateur (EGUI)](#63-interface-utilisateur-egui)  
-   - [6.4 Downscaling graphique](#64-downscaling-graphique)  
-7. [📷 Captures d’écran](#📷-captures-décran)  
-8. [🚀 Exécution du projet](#-exécution-du-projet)  
-   - [Prérequis](#prérequis)  
-   - [Étapes](#étapes)  
-9. [📌 Conclusion](#-conclusion)
+## How it works
 
----
+| Module | Role |
+|---|---|
+| `city.rs` | Tile generation: a Perlin field decides, per cell, whether it becomes road, park or building; the chaos value scales the noise so the city goes from a regular grid to an irregular sprawl |
+| `chunk.rs` | Keeps only the chunks around the camera alive; spawns new ones as the camera moves and despawns the far ones. A change of chaos (detected with `is_changed()`) clears and regenerates everything |
+| `camera.rs` | 3D camera with pan and zoom (height and depth only, so the viewing angle stays stable), plus the render-to-texture path used for downscaling |
+| `ui.rs` | `bevy_egui` panel; changes are applied on mouse release rather than on every frame to avoid regenerating the world continuously |
+| `trees.rs`, `lighting.rs` | Decoration and a simple directional light |
 
-## 🎯 Objectif du projet
+### Design notes
 
-Le but de ce projet était d’expérimenter la **génération procédurale en 3D**, en particulier dans un cadre de ville virtuelle.  
-L'utilisateur doit pouvoir influencer la structure de la ville (rues, parcs, immeubles) en **temps réel**, notamment via un curseur contrôlant un niveau de **chaos**.
+- **From a fixed grid to noise.** The first version was a static 31×31 grid with hard-coded tiles. Perlin noise replaced it so that every launch gives a coherent but different city, and the chaos slider became a single scalar that controls the whole layout.
+- **Chunking was a performance necessity.** Rendering the whole city at once was too heavy; generating only the chunks near the camera brought the frame rate back and made the world effectively unbounded.
+- **Two cameras.** The egui overlay needs a 2D camera, the city a 3D one. They are distinguished by a `Main3dCamera` marker component so that systems address the right one.
+- **Render downscaling has a hard limit.** The scene is rendered to a low-resolution texture that is then stretched over a full-screen quad. This reduces fragment work, but Bevy's pipeline still runs every ECS system, entity update and light calculation at full cost — the gain is purely visual. A custom render graph would be needed to go further.
 
----
+![Downscaling](./screenshots/scale.png)
 
-## 🧩 Fonctionnalités principales
+## Screenshots
 
-- Génération procédurale de tuiles : parcs, routes, bâtiments
-- Adaptation du monde via le curseur de chaos
-- Optimisation du rendu avec un système de **chunking dynamique**
-- Caméra libre et zoomable
-- Interface graphique temps réel
-- Tentative de **downscaling graphique** pour gain de performance
+| Full resolution | Medium downscale | Strong downscale |
+|---|---|---|
+| ![](./screenshots/high_res.png) | ![](./screenshots/mid_res.png) | ![](./screenshots/low_res.png) |
 
----
+| Zoomed out | Zoomed in |
+|---|---|
+| ![](./screenshots/zoom_out.png) | ![](./screenshots/zoom_in.png) |
 
-## 🧠 Organisation du travail
+| Low chaos | High chaos |
+|---|---|
+| ![](./screenshots/low_chaos.png) | ![](./screenshots/high_chaos.png) |
 
-Nous avons structuré le projet en modules clairs (`camera.rs`, `city.rs`, `chunk.rs`, etc.) afin de séparer les responsabilités.  
-Cela a permis de mieux collaborer et de rendre le code plus clair et maintenable.
+## Stack
 
----
-
-## 🌆 Étapes de construction du projet
-
-### 4.1 Génération simple (taille fixe)
-
-La toute première version générait une grille statique de taille fixe (31x31), avec des entités prédéfinies (routes, parcs, bâtiments), sans aucune interaction utilisateur.
-
-### 4.2 Génération procédurale avec bruit
-
-Nous avons intégré du **bruit de Perlin** pour rendre la ville plus organique.  
-Cela permettait de transformer la grille fixe en une ville cohérente mais aléatoire à chaque lancement.
-
-### 4.3 Génération par chunks
-
-Pour améliorer les performances :
-- Le monde est divisé en zones (chunks) générées à la volée.
-- Seules les zones proches de la caméra sont rendues.
-- Lors d’un changement de chaos, les chunks sont supprimés et régénérés.
-
----
-
-## 👤 Interactions utilisateur
-
-### 5.1 Caméra
-
-- Contrôle : flèches directionnelles pour se déplacer
-- Zoom contrôlé via un **slider interactif**
-- La caméra est identifiée via un tag `Main3dCamera` pour éviter les conflits
-
-### 5.2 Interface graphique
-
-Utilisation d’**EGUI via `bevy_egui`** :
-- Curseur de **chaos**
-- Curseur de **zoom**
-- Curseur de **résolution**
-- **Bouton de régénération** de la ville (supprime tout et recrée une nouvelle ville)
-
----
-
-## 🧠 Problèmes rencontrés et solutions
-
-### 6.1 Gestion de la caméra
-
-- **Conflit de caméras** : 2D et 3D superposées → résolution via un tag `Main3dCamera`
-- **Zoom trop intrusif** → uniquement la hauteur et la profondeur sont modifiées
-
-### 6.2 Chunking et performance
-
-- **Rendu de la ville entière** → trop lourd pour la machine
-- **Implémentation du chunking** : seulement les zones proches sont affichées
-- **Problème de rechargement** : détecté grâce à `is_changed()` sur le chaos
-
-### 6.3 Interface utilisateur (EGUI)
-
-- L’interface n’apparaissait pas → ajout d’une caméra **2D dédiée**
-- Changements trop fréquents → optimisation en appliquant les changements uniquement quand la souris est relâchée
-
-### 6.4 Downscaling graphique
-![alt text](./screenshots/scale.png)
-*Le downscaling permet de dessiner moins de pixels, donc la carte graphique travaille moins. Le résultat est ensuite agrandi pour remplir l’écran.*
-- **Objectif** : alléger la charge GPU
-
-- **Solution utilisée** :
-  - rendu vers une texture basse résolution
-  - affichage sur un `quad` géant
-- **Limite importante** :  
-  Le **pipeline de rendu de Bevy** continue à faire tous les calculs d'entités et lighting, **le gain est donc uniquement visuel**. On ne gagne **pas** en calcul ECS.
-
-#### Améliorations futures
-
-- Implémentation d’un **render graph personnalisé** pour palier à cette limite
-
----
-
-## 📷 Captures d’écran
-
-### Vue générale
-![Vue générale](./screenshots/vue_generale.png)  
-*Vue d'ensemble de la ville générée procéduralement.*
-### Qualité de rendu
-| Aucune réduction graphique             | Moyenne réduction graphique            | Forte réduction graphique             |
-|----------------------------------------|-----------------------------------------|----------------------------------------|
-| ![Aucune réduction graphique](./screenshots/high_res.png) | ![Moyenne réduction graphique](./screenshots/mid_res.png) | ![Forte réduction graphique](./screenshots/low_res.png) |
-
-### Zoom
-| Vue éloignée                          | Vue rapprochée                         |
-|---------------------------------------|----------------------------------------|
-| ![Zoom extérieur](./screenshots/zoom_out.png) | ![Zoom intérieur](./screenshots/zoom_in.png) |
-
-### Niveau de chaos
-| Faible chaos                          | Fort chaos                             |
-|---------------------------------------|----------------------------------------|
-| ![Faible chaos](./screenshots/low_chaos.png) | ![Fort chaos](./screenshots/high_chaos.png) |
-
----
-
-## 🚀 Exécution du projet
-
-### Prérequis
-
-Avant de commencer, assurez-vous d'avoir les éléments suivants installés sur votre machine :
-- [Rust](https://www.rust-lang.org/tools/install) (version stable)
-- Git pour cloner le dépôt
-
-### Étapes
-
-1. **Installer Rust** :
-   ```bash
-   rustup install stable
-   ```
-
-2. **Cloner ce dépôt** :
-   ```bash
-   git clone https://github.com/avidelaine/Ville3dProcedurale
-   cd Ville3dProcedurale
-   ```
-
-3. **Lancer le projet** :
-   ```bash
-   cargo run
-   ```
-
----
-
-## 📌 Conclusion
-
-Ce projet nous a permis de découvrir en profondeur :
-- la **programmation procédurale**
-- le **moteur Bevy** et l’architecture ECS
-- la **gestion de scènes 3D dynamiques**
-- les **limitations de performances graphiques** dans un moteur moderne
-
-Il nous a aussi fait expérimenter les principes fondamentaux d’un moteur de jeu :
-- caméra
-- rendu
-- interactions UI
-- génération de contenu à la volée
-
-Grâce à ce projet, nous avons produit une **ville générée procéduralement**, **interactive**, **personnalisable**, et **entièrement en Rust**.
+Rust 2021 · Bevy 0.13 · bevy_egui 0.25 · noise 0.8 · rand 0.8
